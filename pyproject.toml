@@ -11,6 +11,8 @@ python = "^3.11"
 playwright = "^1.37.0"
 english-words = "^2.0.1"
 
+[tool.poetry.scripts]
+bingto = 'bingto.app:main'
 
 [build-system]
 requires = ["poetry-core"]
