@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "bingto"
+version = "0.1.0"
+description = "Auto Bing chilling for you."
+authors = ["tretrauit <tretrauit@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+playwright = "^1.37.0"
+english-words = "^2.0.1"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
