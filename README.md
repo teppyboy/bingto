@@ -4,7 +4,8 @@ Automate Bing searches to earn Microsoft Rewards points.
 
 ## Usage
 
-For first run, you need to execute `bingto --install` to complete the dependency install
+For first run, if you don't have Edge then you need to execute `bingto --install` to 
+complete the dependency install.
 
 Then after that, execute `bingto` and let it do the job.
 

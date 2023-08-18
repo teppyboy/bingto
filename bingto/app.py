@@ -26,6 +26,16 @@ def wait(a: float, b: float):
     sleep(uniform(a, b))
 
 
+def create_browser(p: Page, headless: bool):
+    try:
+        browser = p.chromium.launch(headless=headless, channel="msedge")
+    except Error as e:
+        print(f"Error occurred while launching Edge: {e}")
+        print("Trying to launch Chromium...")
+        browser = p.chromium.launch(headless=headless)
+    return browser
+
+
 def login():
     """
     Initiate the login process for Bing.
@@ -33,7 +43,7 @@ def login():
     print("This will initiate the login process for Bing.")
     print("After logging in, press [ENTER] to continue.", end="")
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = create_browser(p, False)
         context = browser.new_context()
         page = context.new_page()
         page.goto("https://login.live.com/login.srf")
@@ -126,7 +136,7 @@ def main():
         print("Cookies file not found.")
         login()
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=args.silent)
+        browser = create_browser(p, args.silent)
         print("Loading cookies...")
         context = browser.new_context(storage_state="cookies.json")
         page = context.new_page()
