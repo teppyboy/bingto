@@ -1,6 +1,6 @@
 import argparse
 from english_words import get_english_words_set
-from playwright.sync_api import sync_playwright, Error, Page
+from playwright.sync_api import sync_playwright, Error, Page, Browser
 from pathlib import Path
 from time import time, sleep
 from random import choice, randint, uniform
@@ -26,7 +26,7 @@ def wait(a: float, b: float):
     sleep(uniform(a, b))
 
 
-def create_browser(p: Page, headless: bool):
+def create_browser(p: Page, headless: bool) -> Browser:
     try:
         browser = p.chromium.launch(headless=headless, channel="msedge")
     except Error as e:
@@ -178,7 +178,7 @@ def main():
             print("Launching browser (Mobile version)...")
             webkit = p.webkit
             iphone = p.devices["iPhone 13 Pro Max"]
-            browser = webkit.launch(headless=False)
+            browser = webkit.launch(headless=args.silent)
             print("Loading settings & cookies...")
             context = browser.new_context(**iphone, storage_state="cookies.json")
             page = context.new_page()
