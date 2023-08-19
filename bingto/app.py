@@ -1,4 +1,5 @@
 import argparse
+from bingto import __version__
 from bingto.constant import EDGE_IOS_UA
 from english_words import get_english_words_set
 from playwright.sync_api import sync_playwright, Error, Page, Browser
@@ -155,7 +156,7 @@ def main():
     )
     args = parser.parse_args()
     DEBUG = args.debug
-    print("Bingto v0.1.0 - https://github.com/teppyboy/bingto")
+    print(f"Bingto {__version__} - https://github.com/teppyboy/bingto")
     print("")
     if args.install:
         install_deps()
