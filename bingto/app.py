@@ -1,10 +1,9 @@
 import argparse
 from bingto import __version__
-from bingto.constant import EDGE_IOS_UA
-from english_words import get_english_words_set
-from playwright.sync_api import sync_playwright, Error, Page, Browser
+from bingto.constant import EDGE_IOS_UA, WORD_LIST
+from playwright.sync_api import sync_playwright, Error, Page, Browser, TimeoutError
 from pathlib import Path
-from time import time, sleep
+from time import sleep
 from random import choice, randint, uniform
 from runpy import run_module
 from undetected_playwright import stealth_sync
@@ -19,7 +18,7 @@ def dbg_pause():
     Pause the program if DEBUG is True.
     """
     if DEBUG:
-        input("Debug is enabled, press [ENTER] to continue execution.")
+        input("[DEBUG]: Press [ENTER] to continue execution.")
 
 
 def dbg_screenshot(page: Page, name: str):
@@ -28,6 +27,11 @@ def dbg_screenshot(page: Page, name: str):
     """
     if DEBUG:
         page.screenshot(path=f"{name}.png")
+
+
+def dbg_print(*args, **kwargs):
+    if DEBUG:
+        print("[DEBUG]:", *args, **kwargs)
 
 
 def wait(a: float, b: float):
@@ -76,11 +80,40 @@ def login():
         browser.close()
 
 
+def get_score(page: Page, mobile: bool = False) -> int:
+    """
+    Get the current score.
+    """
+    if mobile:
+        dbg_print("Mobile mode, opening drawer...")
+        page.locator("#mHamburger").click()
+        wait(0.5, 1.5)
+        for _ in range(3):
+            dbg_print("Getting score...")
+            try:
+                return int(page.locator("#fly_id_rc").inner_text(timeout=1000))
+            except ValueError:
+                dbg_print("Error occurred while parsing score, waiting...")
+                wait(0.5, 1.5)
+            except TimeoutError:
+                dbg_print("Timeout occurred while parsing score, opening drawer...")
+                page.locator("#mHamburger").click()
+                wait(0.5, 1.5)
+        return -1
+    else:
+        dbg_print("PC mode.")
+        for _ in range(3):
+            dbg_print("Getting score...")
+            try:
+                return int(page.locator("#id_rc").inner_text(timeout=1000))
+            except ValueError:
+                dbg_print("Error occurred while parsing score, waiting...")
+                wait(0.5, 1.5)
+        return -1
+
+
 def search(page: Page, mobile: bool = False):
     print("Initializing word list...")
-    start_time = time()
-    word_list = get_english_words_set(["web2"], lower=True)
-    print(f"Word list initialized in {time() - start_time}s")
     print("Starting search...")
     prev_score = -1
     for i in range(36):
@@ -89,29 +122,22 @@ def search(page: Page, mobile: bool = False):
         print("Word length:", word_len)
         words = []
         for _ in range(word_len):
-            words.append(choice(list(word_list)))
+            words.append(choice(list(WORD_LIST)))
         print("Word:", words)
         generated_query = "+".join(words)
         print("Generated query:", generated_query)
         page.goto(f"https://www.bing.com/search?q={generated_query}")
         wait(1, 3)
-        try:
-            if mobile:
-                print("Opening the drawer...")
-                page.locator("#mHamburger").click()
-                wait(0.5, 1.5)
-                curr_score = int(page.locator("#fly_id_rc").inner_text())
-            else:
-                curr_score = int(page.locator("#id_rc").inner_text())
-            print("Current score:", curr_score)
-            print("Previous score:", prev_score)
-            if curr_score == prev_score:
-                print("Score did not change, probably we searched enough.")
-                break
-            prev_score = curr_score
-        except ValueError:
-            print("Error occurred while parsing score.")
+        curr_score = get_score(page, mobile)
+        print("Current score:", curr_score)
+        print("Previous score:", prev_score)
+        if curr_score == -1:
+            print("Error occurred while parsing score, skipping...")
             continue
+        if curr_score == prev_score:
+            print("Score did not change, probably we searched enough.")
+            break
+        prev_score = curr_score
         dbg_pause()
     print("Search complete.")
 
