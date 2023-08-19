@@ -65,7 +65,7 @@ def login():
         browser.close()
 
 
-def search(page: Page):
+def search(page: Page, mobile: bool = False):
     print("Initializing word list...")
     start_time = time()
     word_list = get_english_words_set(["web2"], lower=True)
@@ -83,9 +83,15 @@ def search(page: Page):
         generated_query = "+".join(words)
         print("Generated query:", generated_query)
         page.goto(f"https://www.bing.com/search?q={generated_query}")
-        wait(2, 5)
+        wait(1, 3)
         try:
-            curr_score = int(page.locator("#id_rc").inner_text())
+            if mobile:
+                print("Opening the drawer...")
+                page.locator("#mHamburger").click()
+                wait(0.5, 1.5)
+                curr_score = int(page.locator("#fly_id_rc").inner_text())
+            else:
+                curr_score = int(page.locator("#id_rc").inner_text())
             if curr_score == prev_score:
                 print("Score did not change, probably we searched enough.")
                 break
@@ -101,7 +107,7 @@ def install_deps():
     Install required dependencies.
     """
     print("Installing Playwright...")
-    sys.argv = ["playwright", "install", "chromium"]
+    sys.argv = ["playwright", "install", "chromium", "webkit"]
     run_module("playwright", run_name="__main__")
     print("Dependencies installed.")
 
@@ -117,6 +123,18 @@ def main():
         "--install",
         action="store_true",
         help="Install required dependencies and exit",
+        default=False,
+    )
+    parser.add_argument(
+        "--skip-pc",
+        action="store_true",
+        help="Skip PC version of Bing",
+        default=False,
+    )
+    parser.add_argument(
+        "--skip-mobile",
+        action="store_true",
+        help="Skip mobile version of Bing",
         default=False,
     )
     parser.add_argument(
@@ -136,18 +154,46 @@ def main():
         print("Cookies file not found.")
         login()
     with sync_playwright() as p:
-        browser = create_browser(p, args.silent)
-        print("Loading cookies...")
-        context = browser.new_context(storage_state="cookies.json")
-        page = context.new_page()
-        print("Visiting Bing...")
-        page.goto("https://bing.com")
-        wait(3, 5)
-        print("Clicking the 'Login' button...")
-        page.locator("#id_l").click()
-        wait(2, 3)
-        print("Executing search function...")
-        search(page)
-        dbg_pause()
-        print("Closing browser...")
-        browser.close()
+        # PC
+        if not args.skip_pc:
+            print("Launching browser (PC version)...")
+            browser = create_browser(p, args.silent)
+            print("Loading cookies...")
+            context = browser.new_context(storage_state="cookies.json")
+            page = context.new_page()
+            print("Visiting Bing...")
+            page.goto("https://bing.com")
+            dbg_pause()
+            wait(3, 5)
+            print("Clicking the 'Login' button...")
+            page.locator("#id_l").click()
+            wait(2, 3)
+            print("Executing search function...")
+            search(page)
+            dbg_pause()
+            print("Closing browser...")
+            browser.close()
+        # Mobile
+        if not args.skip_mobile:
+            print("Launching browser (Mobile version)...")
+            webkit = p.webkit
+            iphone = p.devices["iPhone 13 Pro Max"]
+            browser = webkit.launch(headless=False)
+            print("Loading settings & cookies...")
+            context = browser.new_context(**iphone, storage_state="cookies.json")
+            page = context.new_page()
+            print("Visiting Bing...")
+            page.goto("https://bing.com")
+            dbg_pause()
+            wait(1, 2)
+            print("Opening the drawer...")
+            page.locator("#mHamburger").click()
+            wait(1, 2)
+            print("Clicking the 'Login' button...")
+            page.locator("#hb_s").click()
+            wait(1, 2)
+            print("Executing search function...")
+            search(page, mobile=True)
+            dbg_pause()
+            print("Closing browser...")
+            browser.close()
