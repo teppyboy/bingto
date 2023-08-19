@@ -128,7 +128,21 @@ files = [
     {file = "typing_extensions-4.7.1.tar.gz", hash = "sha256:b75ddc264f0ba5615db7ba217daeb99701ad295353c45f9e95963337ceeeffb2"},
 ]
 
+[[package]]
+name = "undetected-playwright"
+version = "0.1.0"
+description = "You know who I am"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "undetected-playwright-0.1.0.tar.gz", hash = "sha256:9f939e60299abe488aded496bcbcee65ea156f362482f3cc345b785e5747becb"},
+    {file = "undetected_playwright-0.1.0-py3-none-any.whl", hash = "sha256:c1a6ddd24478e6977eb263d2400fc142d2599cb7ce2689a3e8f8f599ced8aac5"},
+]
+
+[package.dependencies]
+playwright = "*"
+
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "9f5978bf58264aaeb2718d51a1baecb18b104a49bd86061205be2c4119e523d2"
+content-hash = "be9f3814c873bdf44e13e8d34120079a830eec266dcd4fb4a3a77a0f511e12b4"

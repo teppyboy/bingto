@@ -1,10 +1,12 @@
 import argparse
+from bingto.constant import EDGE_IOS_UA
 from english_words import get_english_words_set
 from playwright.sync_api import sync_playwright, Error, Page, Browser
 from pathlib import Path
 from time import time, sleep
 from random import choice, randint, uniform
 from runpy import run_module
+from undetected_playwright import stealth_sync
 import sys
 
 
@@ -17,6 +19,14 @@ def dbg_pause():
     """
     if DEBUG:
         input("Debug is enabled, press [ENTER] to continue execution.")
+
+
+def dbg_screenshot(page: Page, name: str):
+    """
+    Take a screenshot if DEBUG is True.
+    """
+    if DEBUG:
+        page.screenshot(path=f"{name}.png")
 
 
 def wait(a: float, b: float):
@@ -157,15 +167,22 @@ def main():
         # PC
         if not args.skip_pc:
             print("Launching browser (PC version)...")
-            browser = create_browser(p, args.silent)
-            print("Loading cookies...")
-            context = browser.new_context(storage_state="cookies.json")
+            if args.silent:
+                browser = p.chromium.launch(headless=args.silent)
+            else:
+                browser = create_browser(p, args.silent)
+            print("Loading config & cookies...")
+            edge = p.devices["Desktop Edge"]
+            context = browser.new_context(**edge, storage_state="cookies.json")
+            stealth_sync(context)
             page = context.new_page()
             print("Visiting Bing...")
             page.goto("https://bing.com")
+            dbg_screenshot(page, "bing-chromium-1")
             dbg_pause()
             wait(3, 5)
             print("Clicking the 'Login' button...")
+            dbg_screenshot(page, "bing-chromium-2")
             page.locator("#id_l").click()
             wait(2, 3)
             print("Executing search function...")
@@ -177,16 +194,21 @@ def main():
         if not args.skip_mobile:
             print("Launching browser (Mobile version)...")
             webkit = p.webkit
+            # print(p.devices)
             iphone = p.devices["iPhone 13 Pro Max"]
+            print("Monkey-patching WebKit user agent...")
+            iphone["user_agent"] = EDGE_IOS_UA
             browser = webkit.launch(headless=args.silent)
-            print("Loading settings & cookies...")
+            print("Loading config & cookies...")
             context = browser.new_context(**iphone, storage_state="cookies.json")
             page = context.new_page()
             print("Visiting Bing...")
             page.goto("https://bing.com")
+            dbg_screenshot(page, "bing-webkit-1")
             dbg_pause()
             wait(1, 2)
             print("Opening the drawer...")
+            dbg_screenshot(page, "bing-webkit-2")
             page.locator("#mHamburger").click()
             wait(1, 2)
             print("Clicking the 'Login' button...")
