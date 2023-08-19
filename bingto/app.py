@@ -72,7 +72,7 @@ def search(page: Page, mobile: bool = False):
     print(f"Word list initialized in {time() - start_time}s")
     print("Starting search...")
     prev_score = -1
-    for i in range(11):
+    for i in range(31):
         print(f"Search attempt {i + 1}/30")
         word_len = randint(2, 10)
         print("Word length:", word_len)
