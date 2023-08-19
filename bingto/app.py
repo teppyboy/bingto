@@ -112,6 +112,7 @@ def search(page: Page, mobile: bool = False):
         except ValueError:
             print("Error occurred while parsing score.")
             continue
+        dbg_pause()
     print("Search complete.")
 
 
