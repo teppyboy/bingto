@@ -103,6 +103,8 @@ def search(page: Page, mobile: bool = False):
                 curr_score = int(page.locator("#fly_id_rc").inner_text())
             else:
                 curr_score = int(page.locator("#id_rc").inner_text())
+            print("Current score:", curr_score)
+            print("Previous score:", prev_score)
             if curr_score == prev_score:
                 print("Score did not change, probably we searched enough.")
                 break
