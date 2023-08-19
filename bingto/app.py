@@ -71,7 +71,7 @@ def search(page: Page, mobile: bool = False):
     word_list = get_english_words_set(["web2"], lower=True)
     print(f"Word list initialized in {time() - start_time}s")
     print("Starting search...")
-    prev_score = 0
+    prev_score = -1
     for i in range(11):
         print(f"Search attempt {i + 1}/30")
         word_len = randint(2, 10)
