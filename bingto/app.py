@@ -1,7 +1,14 @@
 import argparse
 from bingto import __version__
 from bingto.constant import EDGE_IOS_UA, WORD_LIST
-from playwright.sync_api import sync_playwright, Error, Page, Browser, TimeoutError
+from playwright.sync_api import (
+    sync_playwright,
+    Error,
+    Page,
+    Browser,
+    TimeoutError,
+    Playwright,
+)
 from pathlib import Path
 from time import sleep
 from random import choice, randint, uniform
@@ -41,7 +48,7 @@ def wait(a: float, b: float):
     sleep(uniform(a, b))
 
 
-def create_browser(p: Page, headless: bool) -> Browser:
+def create_browser(p: Playwright, headless: bool) -> Browser:
     try:
         browser = p.chromium.launch(headless=headless, channel="msedge")
     except Error as e:
@@ -116,7 +123,8 @@ def search(page: Page, mobile: bool = False):
     print("Initializing word list...")
     print("Starting search...")
     prev_score = -1
-    for i in range(36):
+    m_same_score = 0
+    for i in range(50):
         print(f"Search attempt {i + 1}/30")
         word_len = randint(2, 10)
         print("Word length:", word_len)
@@ -127,7 +135,7 @@ def search(page: Page, mobile: bool = False):
         generated_query = "+".join(words)
         print("Generated query:", generated_query)
         page.goto(f"https://www.bing.com/search?q={generated_query}")
-        wait(1, 3)
+        wait(3, 4)
         curr_score = get_score(page, mobile)
         print("Current score:", curr_score)
         print("Previous score:", prev_score)
@@ -135,11 +143,75 @@ def search(page: Page, mobile: bool = False):
             print("Error occurred while parsing score, skipping...")
             continue
         if curr_score == prev_score:
-            print("Score did not change, probably we searched enough.")
-            break
+            if not mobile:
+                print("Score did not change, probably we searched enough.")
+                break
+            else:
+                dbg_print("Mobile same score:", m_same_score)
+                if m_same_score == 3:
+                    print("Score did not change 3 times, probably we searched enough.")
+                    break
+                m_same_score += 1
         prev_score = curr_score
         dbg_pause()
     print("Search complete.")
+
+
+def launch_pc(p: Playwright, silent: bool = False):
+    print("Launching browser (PC version)...")
+    if silent:
+        browser = p.chromium.launch(headless=silent)
+    else:
+        browser = create_browser(p, silent)
+    print("Loading config & cookies...")
+    edge = p.devices["Desktop Edge"]
+    context = browser.new_context(**edge, storage_state="cookies.json")
+    stealth_sync(context)
+    page = context.new_page()
+    print("Visiting Bing...")
+    page.goto("https://bing.com")
+    dbg_screenshot(page, "bing-chromium-1")
+    dbg_pause()
+    wait(3, 5)
+    print("Clicking the 'Login' button...")
+    dbg_screenshot(page, "bing-chromium-2")
+    page.locator("#id_l").click()
+    wait(2, 3)
+    print("Executing search function...")
+    search(page)
+    dbg_pause()
+    print("Closing browser...")
+    browser.close()
+
+
+def launch_mobile(p: Playwright, silent: bool = False):
+    print("Launching browser (Mobile version)...")
+    webkit = p.webkit
+    # print(p.devices)
+    iphone = p.devices["iPhone 13 Pro Max"]
+    print("Monkey-patching WebKit user agent...")
+    iphone["user_agent"] = EDGE_IOS_UA
+    browser = webkit.launch(headless=silent)
+    print("Loading config & cookies...")
+    context = browser.new_context(**iphone, storage_state="cookies.json")
+    page = context.new_page()
+    print("Visiting Bing...")
+    page.goto("https://bing.com")
+    dbg_screenshot(page, "bing-webkit-1")
+    dbg_pause()
+    wait(1, 2)
+    print("Opening the drawer...")
+    dbg_screenshot(page, "bing-webkit-2")
+    page.locator("#mHamburger").click()
+    wait(1, 2)
+    print("Clicking the 'Login' button...")
+    page.locator("#hb_s").click()
+    wait(1, 2)
+    print("Executing search function...")
+    search(page, mobile=True)
+    dbg_pause()
+    print("Closing browser...")
+    browser.close()
 
 
 def install_deps():
@@ -196,56 +268,7 @@ def main():
     with sync_playwright() as p:
         # PC
         if not args.skip_pc:
-            print("Launching browser (PC version)...")
-            if args.silent:
-                browser = p.chromium.launch(headless=args.silent)
-            else:
-                browser = create_browser(p, args.silent)
-            print("Loading config & cookies...")
-            edge = p.devices["Desktop Edge"]
-            context = browser.new_context(**edge, storage_state="cookies.json")
-            stealth_sync(context)
-            page = context.new_page()
-            print("Visiting Bing...")
-            page.goto("https://bing.com")
-            dbg_screenshot(page, "bing-chromium-1")
-            dbg_pause()
-            wait(3, 5)
-            print("Clicking the 'Login' button...")
-            dbg_screenshot(page, "bing-chromium-2")
-            page.locator("#id_l").click()
-            wait(2, 3)
-            print("Executing search function...")
-            search(page)
-            dbg_pause()
-            print("Closing browser...")
-            browser.close()
+            launch_pc(p, args.silent)
         # Mobile
         if not args.skip_mobile:
-            print("Launching browser (Mobile version)...")
-            webkit = p.webkit
-            # print(p.devices)
-            iphone = p.devices["iPhone 13 Pro Max"]
-            print("Monkey-patching WebKit user agent...")
-            iphone["user_agent"] = EDGE_IOS_UA
-            browser = webkit.launch(headless=args.silent)
-            print("Loading config & cookies...")
-            context = browser.new_context(**iphone, storage_state="cookies.json")
-            page = context.new_page()
-            print("Visiting Bing...")
-            page.goto("https://bing.com")
-            dbg_screenshot(page, "bing-webkit-1")
-            dbg_pause()
-            wait(1, 2)
-            print("Opening the drawer...")
-            dbg_screenshot(page, "bing-webkit-2")
-            page.locator("#mHamburger").click()
-            wait(1, 2)
-            print("Clicking the 'Login' button...")
-            page.locator("#hb_s").click()
-            wait(1, 2)
-            print("Executing search function...")
-            search(page, mobile=True)
-            dbg_pause()
-            print("Closing browser...")
-            browser.close()
+            launch_mobile(p, args.silent)
