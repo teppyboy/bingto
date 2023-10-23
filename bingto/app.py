@@ -157,9 +157,9 @@ def search(page: Page, mobile: bool = False):
     print("Search complete.")
 
 
-def launch_pc(p: Playwright, silent: bool = False):
+def launch_pc(p: Playwright, silent: bool = False, force_chromium: bool = False):
     print("Launching browser (PC version)...")
-    if silent:
+    if silent or force_chromium:
         browser = p.chromium.launch(headless=silent)
     else:
         browser = create_browser(p, silent)
@@ -255,6 +255,11 @@ def main():
     parser.add_argument(
         "--debug", action="store_true", help="Enable debug mode.", default=False
     )
+    parser.add_argument(
+        "--force-chromium",
+        action="store_true",
+        help="Force use of Chromium even if Edge is available.",
+    )
     args = parser.parse_args()
     DEBUG = args.debug
     print(f"Bingto {__version__} - https://github.com/teppyboy/bingto")
@@ -268,7 +273,7 @@ def main():
     with sync_playwright() as p:
         # PC
         if not args.skip_pc:
-            launch_pc(p, args.silent)
+            launch_pc(p, args.silent, args.force_chromium)
         # Mobile
         if not args.skip_mobile:
             launch_mobile(p, args.silent)
