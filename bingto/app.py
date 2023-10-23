@@ -134,7 +134,7 @@ def search(page: Page, mobile: bool = False):
         print("Word:", words)
         generated_query = "+".join(words)
         print("Generated query:", generated_query)
-        page.goto(f"https://www.bing.com/search?q={generated_query}")
+        page.goto(f"https://www.bing.com/search?q={generated_query}&form=QBLH")
         wait(3, 4)
         curr_score = get_score(page, mobile)
         print("Current score:", curr_score)
