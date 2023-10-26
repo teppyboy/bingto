@@ -10,7 +10,7 @@ readme = "README.md"
 python = "^3.11"
 playwright = "^1.37.0"
 english-words = "^2.0.1"
-undetected-playwright = "^0.1.0"
+playwright-stealth = "^1.0.6"
 
 [tool.poetry.scripts]
 bingto = 'bingto.app:main'

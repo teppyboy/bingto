@@ -6,6 +6,7 @@ from playwright.sync_api import (
     Error,
     Page,
     Browser,
+    BrowserType,
     TimeoutError,
     Playwright,
 )
@@ -13,11 +14,37 @@ from pathlib import Path
 from time import sleep
 from random import choice, randint, uniform
 from runpy import run_module
-from undetected_playwright import stealth_sync
+from playwright_stealth import stealth_sync
 import sys
 
 
 DEBUG = False
+
+
+class Debug:
+    @staticmethod
+    def pause():
+        """
+        Pause the program if DEBUG is True.
+        """
+        if DEBUG:
+            input("[DEBUG]: Press [ENTER] to continue execution.")
+
+    @staticmethod
+    def screenshot(page: Page, name: str):
+        """
+        Take a screenshot if DEBUG is True.
+        """
+        if DEBUG:
+            page.screenshot(path=f"{name}.png")
+
+    @staticmethod
+    def print(*args, **kwargs):
+        """
+        Print if DEBUG is True.
+        """
+        if DEBUG:
+            print("[DEBUG]:", *args, **kwargs)
 
 
 def dbg_pause():
@@ -48,13 +75,19 @@ def wait(a: float, b: float):
     sleep(uniform(a, b))
 
 
-def create_browser(p: Playwright, headless: bool) -> Browser:
+def create_browser(p: Playwright, headless: bool, browser_type: BrowserType = None) -> Browser:
     try:
-        browser = p.chromium.launch(headless=headless, channel="msedge")
+        if browser_type:
+            browser = browser_type.launch(headless=headless, channel="msedge")
+        else:
+            browser = p.chromium.launch(headless=headless, channel="msedge")
     except Error as e:
         print(f"Error occurred while launching Edge: {e}")
         print("Trying to launch Chromium...")
-        browser = p.chromium.launch(headless=headless)
+        if browser_type:
+            browser = browser_type.launch(headless=headless)
+        else:
+            browser = p.chromium.launch(headless=headless)
     return browser
 
 
@@ -68,6 +101,7 @@ def login():
         browser = create_browser(p, False)
         context = browser.new_context()
         page = context.new_page()
+        stealth_sync(page=page)
         page.goto("https://login.live.com/login.srf")
         input()
         print("Saving browser cookies...")
@@ -125,16 +159,24 @@ def search(page: Page, mobile: bool = False):
     prev_score = -1
     m_same_score = 0
     for i in range(50):
-        print(f"Search attempt {i + 1}/30")
+        print(f"Search attempt {i + 1}/50")
         word_len = randint(2, 10)
         print("Word length:", word_len)
         words = []
         for _ in range(word_len):
             words.append(choice(list(WORD_LIST)))
         print("Word:", words)
-        generated_query = "+".join(words)
-        print("Generated query:", generated_query)
-        page.goto(f"https://www.bing.com/search?q={generated_query}&form=QBLH")
+        if mobile and i == 0:
+            form_q = page.locator("#sb_form_c")
+            form_q.click()
+            wait(2, 3)
+            page.keyboard.type(" ".join(words), delay=50)
+            wait(1, 2)
+            page.keyboard.press("Enter")
+        else:
+            generated_query = "+".join(words)
+            print("Generated query:", generated_query)
+            page.goto(f"https://www.bing.com/search?q={generated_query}&form=QBLH")
         wait(3, 4)
         curr_score = get_score(page, mobile)
         print("Current score:", curr_score)
@@ -166,10 +208,10 @@ def launch_pc(p: Playwright, silent: bool = False, force_chromium: bool = False)
     print("Loading config & cookies...")
     edge = p.devices["Desktop Edge"]
     context = browser.new_context(**edge, storage_state="cookies.json")
-    stealth_sync(context)
     page = context.new_page()
+    stealth_sync(page=page)
     print("Visiting Bing...")
-    page.goto("https://bing.com")
+    page.goto("https://www.bing.com/")
     dbg_screenshot(page, "bing-chromium-1")
     dbg_pause()
     wait(3, 5)
@@ -184,19 +226,26 @@ def launch_pc(p: Playwright, silent: bool = False, force_chromium: bool = False)
     browser.close()
 
 
-def launch_mobile(p: Playwright, silent: bool = False):
+def launch_mobile(p: Playwright, silent: bool = False, no_webkit: bool = False, force_chromium: bool = False):
     print("Launching browser (Mobile version)...")
-    webkit = p.webkit
+    if no_webkit:
+        browser = p.chromium
+    else:
+        browser = p.webkit
     # print(p.devices)
     iphone = p.devices["iPhone 13 Pro Max"]
     print("Monkey-patching WebKit user agent...")
     iphone["user_agent"] = EDGE_IOS_UA
-    browser = webkit.launch(headless=silent)
+    if no_webkit and not force_chromium:
+        browser = create_browser(p, headless=silent, browser_type=browser)
+    else:
+        browser = browser.launch(headless=silent)
     print("Loading config & cookies...")
     context = browser.new_context(**iphone, storage_state="cookies.json")
     page = context.new_page()
+    stealth_sync(page=page)
     print("Visiting Bing...")
-    page.goto("https://bing.com")
+    page.goto("https://www.bing.com/")
     dbg_screenshot(page, "bing-webkit-1")
     dbg_pause()
     wait(1, 2)
@@ -256,6 +305,11 @@ def main():
         "--debug", action="store_true", help="Enable debug mode.", default=False
     )
     parser.add_argument(
+        "--no-webkit",
+        action="store_true",
+        help="Do not use WebKit for mobile emulation.",
+    )
+    parser.add_argument(
         "--force-chromium",
         action="store_true",
         help="Force use of Chromium even if Edge is available.",
@@ -276,4 +330,4 @@ def main():
             launch_pc(p, args.silent, args.force_chromium)
         # Mobile
         if not args.skip_mobile:
-            launch_mobile(p, args.silent)
+            launch_mobile(p, args.silent, args.no_webkit, args.force_chromium)
