@@ -24,6 +24,8 @@ logging.basicConfig(
 
 
 fake_playwright_stealth_init = False
+
+
 def init_fake_playwright_stealth():
     global fake_playwright_stealth_init
     if fake_playwright_stealth_init:
@@ -41,9 +43,7 @@ def init_fake_playwright_stealth():
 try:
     from playwright_stealth import stealth_sync
 except ImportError:
-    logging.warning(
-        "playwright_stealth failed to import."
-    )
+    logging.warning("playwright_stealth failed to import.")
     init_fake_playwright_stealth()
 
 
@@ -149,7 +149,9 @@ def check_session(page: Page):
     # If we got this then we need to re-authenticate again.
     url: str = get_url(page)
     Debug.print(url)
-    if "https%3a%2f%2fwww.bing.com%2fsecure%2fPassport.aspx" in url and url.startswith("https://login.live.com/login.srf"):
+    if "https%3a%2f%2fwww.bing.com%2fsecure%2fPassport.aspx" in url and url.startswith(
+        "https://login.live.com/login.srf"
+    ):
         logging.error("Session expired, please delete cookies.json and try again.")
         # Exit because we can't do anything else.
         exit(1)
@@ -197,14 +199,25 @@ def search(page: Page, mobile: bool = False):
         for _ in range(word_len):
             words.append(choice(list(WORD_LIST)))
         logging.info(f"Words: {words} ({word_len})")
-        if mobile and i == 0:
-            logging.info("Simulating typing on first mobile search...")
-            form_q = page.locator("#sb_form_c")
-            form_q.click()
-            wait(2, 3)
-            page.keyboard.type(" ".join(words), delay=50)
-            wait(1, 2)
-            page.keyboard.press("Enter")
+        if mobile:
+            if i == 0:
+                logging.info("Simulating typing on first mobile search...")
+                form_q = page.locator("#sb_form_c")
+                form_q.click()
+                wait(2, 3)
+                page.keyboard.type(" ".join(words), delay=50)
+                wait(1, 2)
+                page.keyboard.press("Enter")
+            else:
+                page.locator("#HBleft").click()
+                form_q = page.locator("#sb_form_q")
+                form_q.click()
+                wait(2, 3)
+                page.keyboard.press("Control+A")
+                page.keyboard.press("Backspace", delay=50)
+                page.keyboard.type(" ".join(words), delay=50)
+                wait(1, 2)
+                page.keyboard.press("Enter")
         else:
             generated_query = "+".join(words)
             page.goto(f"https://www.bing.com/search?q={generated_query}&form=QBLH")
@@ -259,28 +272,7 @@ def launch_pc(p: Playwright, silent: bool = False, force_chromium: bool = False)
     browser.close()
 
 
-def launch_mobile(
-    p: Playwright,
-    silent: bool = False,
-    no_webkit: bool = False,
-    force_chromium: bool = False,
-):
-    logging.info("Launching browser (Mobile version)...")
-    if no_webkit:
-        browser = p.chromium
-    else:
-        browser = p.webkit
-    # logging.info(p.devices)
-    iphone = p.devices["iPhone 13 Pro Max"]
-    logging.info("Monkey-patching WebKit user agent...")
-    iphone["user_agent"] = EDGE_IOS_UA
-    if no_webkit and not force_chromium:
-        browser = create_browser(p, headless=silent, browser_type=browser)
-    else:
-        browser = browser.launch(headless=silent)
-    logging.info("Loading config & cookies...")
-    context = browser.new_context(**iphone, storage_state="cookies.json")
-    page = context.new_page()
+def start_mobile(page: Page, browser: Browser):
     stealth_sync(page=page)
     logging.info("Visiting Bing...")
     page.goto("https://www.bing.com/")
@@ -300,6 +292,36 @@ def launch_mobile(
     Debug.pause()
     logging.info("Closing browser...")
     browser.close()
+
+
+def launch_mobile(
+    p: Playwright,
+    silent: bool = False,
+    no_webkit: bool = False,
+    force_chromium: bool = False,
+    real_viewport: bool = False,
+):
+    logging.info("Launching browser (1) (Mobile version)...")
+    if no_webkit:
+        browser = p.chromium
+    else:
+        browser = p.webkit
+    logging.debug(p.devices)
+    iphone = p.devices["iPhone 13 Pro Max"]
+    logging.info("Monkey-patching WebKit user agent...")
+    iphone["user_agent"] = EDGE_IOS_UA
+    if no_webkit and not force_chromium:
+        browser = create_browser(p, headless=silent, browser_type=browser)
+    else:
+        browser = browser.launch(headless=silent)
+    logging.info("Loading config & cookies...")
+    context = browser.new_context(**iphone, storage_state="cookies.json")
+    page = context.new_page()
+    if real_viewport:
+        width = iphone["viewport"]["width"] * iphone["device_scale_factor"]
+        height = iphone["viewport"]["height"] * iphone["device_scale_factor"]
+        page.set_viewport_size({"width": width, "height": height})
+    start_mobile(page, browser)
 
 
 def install_deps():
@@ -358,6 +380,11 @@ def main():
         action="store_true",
         help="Do not use playwright_stealth.",
     )
+    parser.add_argument(
+        "--real-viewport",
+        action="store_true",
+        help="Emulate real viewport size (Mobile only).",
+    )
     args = parser.parse_args()
     DEBUG = args.debug
     if DEBUG:
@@ -377,4 +404,6 @@ def main():
             launch_pc(p, args.silent, args.force_chromium)
         # Mobile
         if not args.skip_mobile:
-            launch_mobile(p, args.silent, args.no_webkit, args.force_chromium)
+            launch_mobile(
+                p, args.silent, args.no_webkit, args.force_chromium, args.real_viewport
+            )
