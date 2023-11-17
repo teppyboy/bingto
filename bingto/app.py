@@ -19,7 +19,7 @@ from runpy import run_module
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s %(name)s (%(funcName)s) (%(filename)s:%(lineno)d) [%(levelname)s] %(message)s",
+    format="%(asctime)s %(name)s (%(funcName)s) (%(filename)s:%(lineno)d) [%(levelname)s]: %(message)s",
 )  # noqa: E501
 
 
@@ -29,12 +29,12 @@ def init_fake_playwright_stealth():
     if fake_playwright_stealth_init:
         return
     fake_playwright_stealth_init = True
-    logging.warning("Using dummy implementations for playwright_stealth...")
+    logging.warning("Using dummy implementations for 'playwright_stealth'...")
     logging.warning("Bingto may be easier to be detected, use at your own risk.")
     global stealth_sync
 
     def stealth_sync(page: Page):
-        logging.warning("stealth_sync() called.")
+        logging.warning("Dummy function called.")
         pass
 
 
@@ -57,7 +57,8 @@ class Debug:
         Pause the program if DEBUG is True.
         """
         if DEBUG:
-            input("[DEBUG]: Press [ENTER] to continue execution.")
+            logging.debug("Press [ENTER] to continue execution.")
+            input()
 
     @staticmethod
     def screenshot(page: Page, name: str):
@@ -73,7 +74,7 @@ class Debug:
         logging.info if DEBUG is True.
         """
         if DEBUG:
-            logging.info("[DEBUG]:", *args, **kwargs)
+            logging.debug(*args, **kwargs)
 
 
 def wait(a: float, b: float):
@@ -129,6 +130,20 @@ def login():
         logging.info("===========================================")
         logging.info("Closing browser...")
         browser.close()
+
+
+def check_session(page: Page):
+    """
+    Check if the session has expired.
+
+    This is meant to be called after logging in.
+    """
+    # https://www.bing.com/secure/Passport.aspx
+    # If we got this then we need to re-authenticate again.
+    if "https%3a%2f%2fwww.bing.com%2fsecure%2fPassport.aspx" in page.url:
+        logging.error("Session expired, please delete cookies.json and try again.")
+        # Exit because we can't do anything else.
+        exit(1)
 
 
 def get_score(page: Page, mobile: bool = False) -> int:
@@ -221,11 +236,13 @@ def launch_pc(p: Playwright, silent: bool = False, force_chromium: bool = False)
     page.goto("https://www.bing.com/")
     Debug.screenshot(page, "bing-chromium-1")
     Debug.pause()
-    wait(3, 5)
+    wait(2, 3)
     logging.info("Clicking the 'Login' button...")
     Debug.screenshot(page, "bing-chromium-2")
     page.locator("#id_l").click()
-    wait(2, 3)
+    Debug.pause()
+    wait(1, 2)
+    check_session(page)
     logging.info("Executing search function...")
     search(page)
     Debug.pause()
@@ -268,6 +285,7 @@ def launch_mobile(
     logging.info("Clicking the 'Login' button...")
     page.locator("#hb_s").click()
     wait(1, 2)
+    check_session(page)
     logging.info("Executing search function...")
     search(page, mobile=True)
     Debug.pause()
@@ -333,6 +351,8 @@ def main():
     )
     args = parser.parse_args()
     DEBUG = args.debug
+    if DEBUG:
+        logging.getLogger().setLevel(logging.DEBUG)
     logging.info(f"Bingto {__version__} - https://github.com/teppyboy/bingto")
     if args.install:
         install_deps()

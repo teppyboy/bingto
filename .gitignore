@@ -1,7 +1,7 @@
 # Bingto
 *.png
 cookies.json
-cookies.json.bak
+*.bak
 
 # Created by https://www.toptal.com/developers/gitignore/api/python
 # Edit at https://www.toptal.com/developers/gitignore?templates=python
