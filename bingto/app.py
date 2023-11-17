@@ -107,7 +107,7 @@ def login():
     Initiate the login process for Bing.
     """
     logging.info("This will initiate the login process for Bing.")
-    logging.info("After logging in, press [ENTER] to continue.", end="")
+    logging.info("After logging in, press [ENTER] to continue.")
     with sync_playwright() as p:
         browser = create_browser(p, False)
         context = browser.new_context()
