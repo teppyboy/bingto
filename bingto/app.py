@@ -140,7 +140,7 @@ def check_session(page: Page):
     """
     # https://www.bing.com/secure/Passport.aspx
     # If we got this then we need to re-authenticate again.
-    if "https%3a%2f%2fwww.bing.com%2fsecure%2fPassport.aspx" in page.url:
+    if "https%3a%2f%2fwww.bing.com%2fsecure%2fPassport.aspx" in page.url and page.url.startswith("https://login.live.com/login.srf"):
         logging.error("Session expired, please delete cookies.json and try again.")
         # Exit because we can't do anything else.
         exit(1)
