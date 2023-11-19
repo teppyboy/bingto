@@ -2,7 +2,7 @@ import argparse
 import logging
 import sys
 from bingto import __version__
-from bingto.constant import EDGE_IOS_UA, WORD_LIST
+from bingto.constant import VALID_IOS_VERSIONS, EDGE_IOS_UA, WORD_LIST
 from playwright.sync_api import (
     sync_playwright,
     Error,
@@ -160,6 +160,8 @@ def check_session(page: Page):
 def get_score(page: Page, mobile: bool = False) -> int:
     """
     Get the current score.
+
+    Returns -1 if an error occurred.
     """
     if mobile:
         logging.info("Mobile mode, opening drawer...")
@@ -189,6 +191,20 @@ def get_score(page: Page, mobile: bool = False) -> int:
         return -1
 
 
+def type_query(page: Page, query: str):
+    """
+    Simulate typing on Bing.
+
+    Apparently this works for both PC and mobile.
+    """
+    search_box = page.locator("#sb_form_q")
+    search_box.click()
+    wait(2, 3)
+    search_box.fill(query)
+    wait(1, 2)
+    page.keyboard.press("Enter")
+
+
 def search(page: Page, mobile: bool = False):
     prev_score = -1
     same_score_count = 0
@@ -201,7 +217,9 @@ def search(page: Page, mobile: bool = False):
         logging.info(f"Words: {words} ({word_len})")
         if mobile:
             if i == 0:
-                logging.info("Simulating typing on first mobile search...")
+                logging.debug("Simulating typing (first search) on mobile...")
+                page.locator("#HBleft").click()
+                wait(1, 2)
                 form_q = page.locator("#sb_form_c")
                 form_q.click()
                 wait(2, 3)
@@ -209,18 +227,25 @@ def search(page: Page, mobile: bool = False):
                 wait(1, 2)
                 page.keyboard.press("Enter")
             else:
-                page.locator("#HBleft").click()
-                form_q = page.locator("#sb_form_q")
-                form_q.click()
-                wait(2, 3)
-                page.keyboard.press("Control+A")
-                page.keyboard.press("Backspace", delay=50)
-                page.keyboard.type(" ".join(words), delay=50)
-                wait(1, 2)
-                page.keyboard.press("Enter")
+                logging.debug("Simulating typing on mobile...")
+                try:
+                    page.locator("#HBleft").click(timeout=1000)
+                except TimeoutError:
+                    logging.info("Drawer already closed.")
+                type_query(page, " ".join(words))
+            wait(2, 3)
+            page.locator(".tilk").first.click()
+            wait(2, 3)
+            page.go_back()
+            wait(2, 3)
         else:
-            generated_query = "+".join(words)
-            page.goto(f"https://www.bing.com/search?q={generated_query}&form=QBLH")
+            if i == 0:
+                # First search is still working, idk how...
+                generated_query = "+".join(words)
+                page.goto(f"https://www.bing.com/search?q={generated_query}&form=QBLH")
+            else:
+                logging.debug("Simulating typing on PC...")
+                type_query(page, " ".join(words))
         wait(3, 4)
         curr_score = get_score(page, mobile)
         logging.info(f"Score (current / previous): {curr_score} / {prev_score}")
@@ -268,36 +293,34 @@ def launch_pc(p: Playwright, silent: bool = False, force_chromium: bool = False)
     logging.info("Executing search function...")
     search(page)
     Debug.pause()
-    logging.info("Closing browser...")
-    browser.close()
     logging.info("Saving browser cookies...")
     try:
         context.storage_state(path="cookies.json")
     except Error:
         logging.exception("Error occurred while saving new cookies")
         logging.warning("This may cause issues in the future.")
+    logging.info("Closing browser...")
+    browser.close()
 
 
-def start_mobile(page: Page, browser: Browser):
+def start_mobile(page: Page):
     stealth_sync(page=page)
     logging.info("Visiting Bing...")
     page.goto("https://www.bing.com/")
     Debug.screenshot(page, "bing-webkit-1")
     Debug.pause()
     wait(1, 2)
-    logging.info("Opening the drawer...")
-    Debug.screenshot(page, "bing-webkit-2")
-    page.locator("#mHamburger").click()
-    wait(1, 2)
-    logging.info("Clicking the 'Login' button...")
-    page.locator("#hb_s").click()
+    if get_score(page, mobile=True) == -1:
+        logging.info("Clicking the 'Login' button...")
+        try:
+            page.locator("#hb_s").click(timeout=1000)
+        except TimeoutError:
+            logging.exception("Failed to click the 'Login' button, assuming we're logged in.")  # noqa: E501
     wait(3, 5)
     check_session(page)
     logging.info("Executing search function...")
     search(page, mobile=True)
     Debug.pause()
-    logging.info("Closing browser...")
-    browser.close()
 
 
 def launch_mobile(
@@ -306,6 +329,7 @@ def launch_mobile(
     no_webkit: bool = False,
     force_chromium: bool = False,
     real_viewport: bool = False,
+    use_pc_profile: bool = False,
 ):
     logging.info("Launching browser (1) (Mobile version)...")
     if no_webkit:
@@ -313,9 +337,14 @@ def launch_mobile(
     else:
         browser = p.webkit
     logging.debug(p.devices)
-    iphone = p.devices["iPhone 13 Pro Max"]
+    if use_pc_profile:
+        iphone = p.devices["Desktop Edge"]
+    else:
+        iphone = p.devices["iPhone 13 Pro Max"]
+    user_agent = EDGE_IOS_UA.format(IOS_VERSION=choice(VALID_IOS_VERSIONS).replace(".", "_"))  # noqa: E501
+    logging.info(f"Crafted UA: {user_agent}")
     logging.info("Monkey-patching WebKit user agent...")
-    iphone["user_agent"] = EDGE_IOS_UA
+    iphone["user_agent"] = user_agent
     if no_webkit and not force_chromium:
         browser = create_browser(p, headless=silent, browser_type=browser)
     else:
@@ -324,16 +353,19 @@ def launch_mobile(
     context = browser.new_context(**iphone, storage_state="cookies.json")
     page = context.new_page()
     if real_viewport:
+        iphone = p.devices["iPhone 13 Pro Max"]
         width = iphone["viewport"]["width"] * iphone["device_scale_factor"]
         height = iphone["viewport"]["height"] * iphone["device_scale_factor"]
         page.set_viewport_size({"width": width, "height": height})
-    start_mobile(page, browser)
+    start_mobile(page)
     logging.info("Saving browser cookies...")
     try:
         context.storage_state(path="cookies.json")
     except Error:
         logging.exception("Error occurred while saving new cookies")
         logging.warning("This may cause issues in the future.")
+    logging.info("Closing browser...")
+    browser.close()
 
 
 def install_deps():
@@ -392,11 +424,17 @@ def main():
         action="store_true",
         help="Do not use playwright_stealth.",
     )
+    # Mobile-only args
     parser.add_argument(
-        "--real-viewport",
+        "--m-real-viewport",
         action="store_true",
         help="Emulate real viewport size (Mobile only).",
     )
+    parser.add_argument(
+        "--m-use-pc-profile",
+        action="store_true",
+        help="Uses PC profile instead of phone as a base (Mobile only).",
+    )    
     args = parser.parse_args()
     DEBUG = args.debug
     if DEBUG:
@@ -417,5 +455,5 @@ def main():
         # Mobile
         if not args.skip_mobile:
             launch_mobile(
-                p, args.silent, args.no_webkit, args.force_chromium, args.real_viewport
+                p, args.silent, args.no_webkit, args.force_chromium, args.m_real_viewport, args.m_use_pc_profile
             )
