@@ -270,6 +270,12 @@ def launch_pc(p: Playwright, silent: bool = False, force_chromium: bool = False)
     Debug.pause()
     logging.info("Closing browser...")
     browser.close()
+    logging.info("Saving browser cookies...")
+    try:
+        context.storage_state(path="cookies.json")
+    except Error:
+        logging.exception("Error occurred while saving new cookies")
+        logging.warning("This may cause issues in the future.")
 
 
 def start_mobile(page: Page, browser: Browser):
@@ -322,6 +328,12 @@ def launch_mobile(
         height = iphone["viewport"]["height"] * iphone["device_scale_factor"]
         page.set_viewport_size({"width": width, "height": height})
     start_mobile(page, browser)
+    logging.info("Saving browser cookies...")
+    try:
+        context.storage_state(path="cookies.json")
+    except Error:
+        logging.exception("Error occurred while saving new cookies")
+        logging.warning("This may cause issues in the future.")
 
 
 def install_deps():
