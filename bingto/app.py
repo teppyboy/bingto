@@ -1,5 +1,6 @@
 import argparse
 import logging
+import string
 import sys
 from bingto import __version__
 from bingto.constant import VALID_IOS_VERSIONS, EDGE_IOS_UA, WORD_LIST
@@ -199,10 +200,17 @@ def type_query(page: Page, query: str):
     """
     search_box = page.locator("#sb_form_q")
     search_box.click()
-    wait(2, 3)
-    search_box.fill(query)
     wait(1, 2)
-    page.keyboard.press("Enter")
+    search_box.clear()
+    wait(1, 2)
+    page.keyboard.type(query, delay=50)
+    # search_box.fill(query)
+    wait(1, 2)
+    suggestions = page.locator(".sa_sg").all()
+    # Exclude the last 2 suggestions because they are not.
+    suggestion = suggestions[randint(0, len(suggestions) - 3)]
+    suggestion.click()
+    # page.keyboard.press("Enter")
 
 
 def search(page: Page, mobile: bool = False):
@@ -210,10 +218,11 @@ def search(page: Page, mobile: bool = False):
     same_score_count = 0
     for i in range(50):
         logging.info(f"Search attempt {i + 1}/50")
-        word_len = randint(2, 10)
-        words = []
-        for _ in range(word_len):
-            words.append(choice(list(WORD_LIST)))
+        word_len = randint(2, 3)
+        # words = []
+        # for _ in range(word_len):
+            # words.append(choice(list(WORD_LIST)))
+        words = [choice(string.ascii_lowercase) for _ in range(word_len)]
         logging.info(f"Words: {words} ({word_len})")
         if mobile:
             if i == 0:
@@ -223,7 +232,7 @@ def search(page: Page, mobile: bool = False):
                 form_q = page.locator("#sb_form_c")
                 form_q.click()
                 wait(2, 3)
-                page.keyboard.type(" ".join(words), delay=50)
+                page.keyboard.type("".join(words), delay=50)
                 wait(1, 2)
                 page.keyboard.press("Enter")
             else:
@@ -232,7 +241,7 @@ def search(page: Page, mobile: bool = False):
                     page.locator("#HBleft").click(timeout=1000)
                 except TimeoutError:
                     logging.info("Drawer already closed.")
-                type_query(page, " ".join(words))
+                type_query(page, "".join(words))
             wait(2, 3)
             page.locator(".tilk").first.click()
             wait(2, 3)
@@ -240,12 +249,19 @@ def search(page: Page, mobile: bool = False):
             wait(2, 3)
         else:
             if i == 0:
-                # First search is still working, idk how...
-                generated_query = "+".join(words)
-                page.goto(f"https://www.bing.com/search?q={generated_query}&form=QBLH")
+                # generated_query = "+".join(words)
+                # page.goto(f"https://www.bing.com/search?q={generated_query}&form=QBLH")
+                form_q = page.locator("#sb_form_q")
+                form_q.click()
+                wait(2, 3)
+                page.keyboard.type("".join(words), delay=50)
+                wait(1, 2)
+                # page.keyboard.press("Tab")
+                # wait(1, 2)
+                page.keyboard.press("Enter")
             else:
                 logging.debug("Simulating typing on PC...")
-                type_query(page, " ".join(words))
+                type_query(page, "".join(words))
         wait(3, 4)
         curr_score = get_score(page, mobile)
         logging.info(f"Score (current / previous): {curr_score} / {prev_score}")
