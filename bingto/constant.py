@@ -55,5 +55,5 @@ VALID_IOS_VERSIONS = [
     "17.1",
     "17.1.1",
 ]
-EDGE_IOS_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS {IOS_VERSION} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 EdgiOS/119.2151.65 Mobile/15E148 Safari/605.1.15"  # noqa: E501
+EDGE_IOS_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS {IOS_VERSION} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 EdgiOS/{EDGE_VERSION} Mobile/15E148 Safari/605.1.15"  # noqa: E501
 WORD_LIST = get_english_words_set(["web2"], lower=True)

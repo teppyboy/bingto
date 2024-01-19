@@ -1,5 +1,7 @@
 import argparse
+import json
 import logging
+import requests
 import string
 import sys
 from bingto import __version__
@@ -49,6 +51,7 @@ except ImportError:
 
 
 DEBUG = False
+DEBUG_PAUSE = False
 
 
 class Debug:
@@ -57,7 +60,7 @@ class Debug:
         """
         Pause the program if DEBUG is True.
         """
-        if DEBUG:
+        if DEBUG and DEBUG_PAUSE:
             logging.debug("Press [ENTER] to continue execution.")
             input()
 
@@ -213,15 +216,66 @@ def type_query(page: Page, query: str):
     # page.keyboard.press("Enter")
 
 
+def search_v2(page: Page, mobile: bool = False):
+    prev_score = -1
+    same_score_count = 0
+    logging.info("Using new search method...")
+    for i in range(50):
+        logging.info(f"Search attempt {i + 1}/50")
+        if mobile:
+            raise NotImplementedError("Mobile search is not supported yet.")
+            if i == 0:
+                pass
+            else:
+                pass
+        else:
+            if i != 0:
+                page.go_back()
+                wait(2, 3)
+            form_q = page.locator("#sb_form_q")
+            form_q.click()
+            wait(2, 3)
+            suggestions = page.locator(".sa_sg").all()
+            # Exclude the last 2 suggestions because they are not.
+            suggestion = suggestions[
+                randint(len(suggestions) - 5, len(suggestions) - 3)
+            ]
+            suggestion.click()
+            wait(2, 3)
+        wait(3, 4)
+        curr_score = get_score(page, mobile)
+        logging.info(f"Score (current / previous): {curr_score} / {prev_score}")
+        if curr_score == -1:
+            logging.info("Error occurred while parsing score, skipping...")
+            continue
+        if curr_score == prev_score:
+            logging.info(f"Same score count: {same_score_count}")
+            if same_score_count == 3:
+                logging.info(
+                    "Score did not change 3 times, probably we searched enough."
+                )
+                logging.info(
+                    "If the score isn't full, please report this issue on GitHub."
+                )
+                break
+            same_score_count += 1
+        else:
+            same_score_count = 0
+        prev_score = curr_score
+        Debug.pause()
+    logging.info("Search complete.")
+
+
 def search(page: Page, mobile: bool = False):
     prev_score = -1
     same_score_count = 0
+    m_no_click_result = False
     for i in range(50):
         logging.info(f"Search attempt {i + 1}/50")
         word_len = randint(2, 3)
         # words = []
         # for _ in range(word_len):
-            # words.append(choice(list(WORD_LIST)))
+        # words.append(choice(list(WORD_LIST)))
         words = [choice(string.ascii_lowercase) for _ in range(word_len)]
         logging.info(f"Words: {words} ({word_len})")
         if mobile:
@@ -243,14 +297,26 @@ def search(page: Page, mobile: bool = False):
                     logging.info("Drawer already closed.")
                 type_query(page, "".join(words))
             wait(2, 3)
-            page.locator(".tilk").first.click()
-            wait(2, 3)
-            page.go_back()
+            logging.debug("Locating the first search result...")
+            click_attempt = 0
+            while click_attempt < 5 and not m_no_click_result:
+                try:
+                    page.locator(".tilk").first.click(timeout=1000)
+                    wait(2, 3)
+                    page.go_back()
+                    break
+                except TimeoutError:
+                    logging.info("Timeout occurred while locating first search result.")
+                    logging.info("Trying again...")
+                    click_attempt += 1
+                    wait(1, 2)
+                if click_attempt == 5:
+                    logging.warning("Failed to locate first search result, skipping from later on.")
+                    m_no_click_result = True
+                    break
             wait(2, 3)
         else:
             if i == 0:
-                # generated_query = "+".join(words)
-                # page.goto(f"https://www.bing.com/search?q={generated_query}&form=QBLH")
                 form_q = page.locator("#sb_form_q")
                 form_q.click()
                 wait(2, 3)
@@ -279,12 +345,19 @@ def search(page: Page, mobile: bool = False):
                 )
                 break
             same_score_count += 1
+        else:
+            same_score_count = 0
         prev_score = curr_score
         Debug.pause()
     logging.info("Search complete.")
 
 
-def launch_pc(p: Playwright, silent: bool = False, force_chromium: bool = False):
+def launch_pc(
+    p: Playwright,
+    silent: bool = False,
+    force_chromium: bool = False,
+    use_search_v2: bool = False,
+):
     logging.info("Launching browser (PC version)...")
     if silent or force_chromium:
         browser = p.chromium.launch(headless=silent)
@@ -292,7 +365,12 @@ def launch_pc(p: Playwright, silent: bool = False, force_chromium: bool = False)
         browser = create_browser(p, silent)
     logging.info("Loading config & cookies...")
     edge = p.devices["Desktop Edge"]
-    context = browser.new_context(**edge, storage_state="cookies.json")
+    context = browser.new_context(
+        **edge,
+        storage_state="cookies.json",
+        locale="vi-VN",
+        timezone_id="Asia/Ho_Chi_Minh",
+    )
     page = context.new_page()
     stealth_sync(page=page)
     logging.info("Visiting Bing...")
@@ -307,7 +385,10 @@ def launch_pc(p: Playwright, silent: bool = False, force_chromium: bool = False)
     wait(1, 2)
     check_session(page)
     logging.info("Executing search function...")
-    search(page)
+    if use_search_v2:
+        search_v2(page)
+    else:
+        search(page)
     Debug.pause()
     logging.info("Saving browser cookies...")
     try:
@@ -319,7 +400,17 @@ def launch_pc(p: Playwright, silent: bool = False, force_chromium: bool = False)
     browser.close()
 
 
-def start_mobile(page: Page):
+def get_mobile_edge_version() -> str:
+    rsp = requests.get("https://edgeupdates.microsoft.com/api/products")
+    rsp.raise_for_status()
+    data = rsp.json()
+    for release in data[0]["Releases"]:
+        if release["Platform"] == "iOS":
+            return release["ProductVersion"]
+    raise ValueError("No iOS version found.")
+
+
+def start_mobile(page: Page, use_search_v2: bool = False):
     stealth_sync(page=page)
     logging.info("Visiting Bing...")
     page.goto("https://www.bing.com/")
@@ -331,11 +422,16 @@ def start_mobile(page: Page):
         try:
             page.locator("#hb_s").click(timeout=1000)
         except TimeoutError:
-            logging.exception("Failed to click the 'Login' button, assuming we're logged in.")  # noqa: E501
+            logging.exception(
+                "Failed to click the 'Login' button, assuming we're logged in."
+            )  # noqa: E501
     wait(3, 5)
     check_session(page)
     logging.info("Executing search function...")
-    search(page, mobile=True)
+    if use_search_v2:
+        search_v2(page, True)
+    else:
+        search(page, True)
     Debug.pause()
 
 
@@ -346,6 +442,7 @@ def launch_mobile(
     force_chromium: bool = False,
     real_viewport: bool = False,
     use_pc_profile: bool = False,
+    use_search_v2: bool = False,
 ):
     logging.info("Launching browser (1) (Mobile version)...")
     if no_webkit:
@@ -357,7 +454,11 @@ def launch_mobile(
         iphone = p.devices["Desktop Edge"]
     else:
         iphone = p.devices["iPhone 13 Pro Max"]
-    user_agent = EDGE_IOS_UA.format(IOS_VERSION=choice(VALID_IOS_VERSIONS).replace(".", "_"))  # noqa: E501
+    edge_version = get_mobile_edge_version()
+    logging.info("Edge version: " + edge_version)
+    user_agent = EDGE_IOS_UA.format(
+        IOS_VERSION=choice(VALID_IOS_VERSIONS).replace(".", "_"), EDGE_VERSION=edge_version
+    )  # noqa: E501
     logging.info(f"Crafted UA: {user_agent}")
     logging.info("Monkey-patching WebKit user agent...")
     iphone["user_agent"] = user_agent
@@ -366,14 +467,19 @@ def launch_mobile(
     else:
         browser = browser.launch(headless=silent)
     logging.info("Loading config & cookies...")
-    context = browser.new_context(**iphone, storage_state="cookies.json")
+    context = browser.new_context(
+        **iphone,
+        storage_state="cookies.json",
+        locale="vi-VN",
+        timezone_id="Asia/Ho_Chi_Minh",
+    )
     page = context.new_page()
     if real_viewport:
         iphone = p.devices["iPhone 13 Pro Max"]
         width = iphone["viewport"]["width"] * iphone["device_scale_factor"]
         height = iphone["viewport"]["height"] * iphone["device_scale_factor"]
         page.set_viewport_size({"width": width, "height": height})
-    start_mobile(page)
+    start_mobile(page, use_search_v2)
     logging.info("Saving browser cookies...")
     try:
         context.storage_state(path="cookies.json")
@@ -395,7 +501,7 @@ def install_deps():
 
 
 def main():
-    global DEBUG
+    global DEBUG, DEBUG_PAUSE
     parser = argparse.ArgumentParser(
         prog="Bingto",
         description="Automate Bing searches to earn Microsoft Rewards points.",  # noqa: E501
@@ -426,6 +532,9 @@ def main():
         "--debug", action="store_true", help="Enable debug mode.", default=False
     )
     parser.add_argument(
+        "--debug-pause", action="store_true", help="Enable debug mode & pausing.", default=False
+    )
+    parser.add_argument(
         "--no-webkit",
         action="store_true",
         help="Do not use WebKit for mobile emulation.",
@@ -440,6 +549,11 @@ def main():
         action="store_true",
         help="Do not use playwright_stealth.",
     )
+    parser.add_argument(
+        "--use-search-v2",
+        action="store_true",
+        help="Use new search method (DOES NOT WORK).",
+    )
     # Mobile-only args
     parser.add_argument(
         "--m-real-viewport",
@@ -450,9 +564,10 @@ def main():
         "--m-use-pc-profile",
         action="store_true",
         help="Uses PC profile instead of phone as a base (Mobile only).",
-    )    
+    )
     args = parser.parse_args()
     DEBUG = args.debug
+    DEBUG_PAUSE = args.debug_pause
     if DEBUG:
         logging.getLogger().setLevel(logging.DEBUG)
     logging.info(f"Bingto {__version__} - https://github.com/teppyboy/bingto")
@@ -467,9 +582,15 @@ def main():
     with sync_playwright() as p:
         # PC
         if not args.skip_pc:
-            launch_pc(p, args.silent, args.force_chromium)
+            launch_pc(p, args.silent, args.force_chromium, args.use_search_v2)
         # Mobile
         if not args.skip_mobile:
             launch_mobile(
-                p, args.silent, args.no_webkit, args.force_chromium, args.m_real_viewport, args.m_use_pc_profile
+                p,
+                args.silent,
+                args.no_webkit,
+                args.force_chromium,
+                args.m_real_viewport,
+                args.m_use_pc_profile,
+                args.use_search_v2,
             )
