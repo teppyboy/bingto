@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "bingto"
-version = "0.3.2"
+version = "0.4.0"
 description = "Auto Bing chilling for you."
 authors = ["tretrauit <tretrauit@gmail.com>"]
 license = "MIT"
