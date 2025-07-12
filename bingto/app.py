@@ -1,12 +1,12 @@
 import argparse
-import json
 import logging
-import requests
 import string
 import sys
+from runpy import run_module
 from bingto import __version__
-from bingto.constant import VALID_IOS_VERSIONS, EDGE_IOS_UA, WORD_LIST
-from playwright.sync_api import (
+from bingto.constant import VALID_IOS_VERSIONS, EDGE_IOS_UA
+from bingto.utils import Debugger, wait, get_mobile_edge_version
+from patchright.sync_api import (
     sync_playwright,
     Error,
     Page,
@@ -16,80 +16,17 @@ from playwright.sync_api import (
     Playwright,
 )
 from pathlib import Path
-from time import sleep
-from random import choice, randint, uniform
-from runpy import run_module
+from random import choice, randint
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(name)s (%(funcName)s) (%(filename)s:%(lineno)d) [%(levelname)s]: %(message)s",
 )  # noqa: E501
-
-
-fake_playwright_stealth_init = False
-
-
-def init_fake_playwright_stealth():
-    global fake_playwright_stealth_init
-    if fake_playwright_stealth_init:
-        return
-    fake_playwright_stealth_init = True
-    logging.warning("Using dummy implementations for 'playwright_stealth'...")
-    logging.warning("Bingto may be easier to be detected, use at your own risk.")
-    global stealth_sync
-
-    def stealth_sync(page: Page):
-        logging.warning("Dummy function called.")
-        pass
-
-
-try:
-    from playwright_stealth import stealth_sync
-except ImportError:
-    logging.warning("playwright_stealth failed to import.")
-    init_fake_playwright_stealth()
-
-
-DEBUG = False
-DEBUG_PAUSE = False
-
-
-class Debug:
-    @staticmethod
-    def pause():
-        """
-        Pause the program if DEBUG is True.
-        """
-        if DEBUG and DEBUG_PAUSE:
-            logging.debug("Press [ENTER] to continue execution.")
-            input()
-
-    @staticmethod
-    def screenshot(page: Page, name: str):
-        """
-        Take a screenshot if DEBUG is True.
-        """
-        if DEBUG:
-            page.screenshot(path=f"{name}.png")
-
-    @staticmethod
-    def print(*args, **kwargs):
-        """
-        logging.info if DEBUG is True.
-        """
-        if DEBUG:
-            logging.debug(*args, **kwargs)
-
-
-def wait(a: float, b: float):
-    """
-    Wait for a random amount of time between a and b seconds.
-    """
-    sleep(uniform(a, b))
+logging.root.name = "bingto"
 
 
 def create_browser(
-    p: Playwright, headless: bool, browser_type: BrowserType = None
+    p: Playwright, headless: bool, browser_type: BrowserType | None = None
 ) -> Browser:
     try:
         if browser_type:
@@ -110,15 +47,22 @@ def login():
     """
     Initiate the login process for Bing.
     """
-    logging.info("This will initiate the login process for Bing.")
-    logging.info("After logging in, press [ENTER] to continue.")
+    logging.info(
+        "This will initiate the login process for Bing."
+    )
+    logging.info("After logging in, the browser will be automatically closed.")
     with sync_playwright() as p:
         browser = create_browser(p, False)
         context = browser.new_context()
         page = context.new_page()
-        stealth_sync(page=page)
         page.goto("https://login.live.com/login.srf")
-        input()
+        try:
+            page.wait_for_url("https://account.microsoft.com/*", timeout=60 * 5 * 1000)
+        except TimeoutError:
+            logging.error(
+                "Login timed out after 5 minutes, please manually press [ENTER] when you are done logging in."
+            )
+            input()
         logging.info("Saving browser cookies...")
         try:
             context.storage_state(path="cookies.json")
@@ -140,7 +84,7 @@ def get_url(page: Page) -> str:
     """
     Get the current URL.
     """
-    return page.evaluate("location.href")
+    return page.evaluate("window.location.href")
 
 
 def check_session(page: Page):
@@ -152,7 +96,7 @@ def check_session(page: Page):
     # https://www.bing.com/secure/Passport.aspx
     # If we got this then we need to re-authenticate again.
     url: str = get_url(page)
-    Debug.print(url)
+    Debugger.print(url)
     if "https%3a%2f%2fwww.bing.com%2fsecure%2fPassport.aspx" in url and url.startswith(
         "https://login.live.com/login.srf"
     ):
@@ -167,12 +111,13 @@ def get_score(page: Page, mobile: bool = False) -> int:
 
     Returns -1 if an error occurred.
     """
+    page.wait_for_load_state("domcontentloaded", timeout=30000)
+    logging.info("Getting score...")
     if mobile:
-        logging.info("Mobile mode, opening drawer...")
         page.locator("#mHamburger").click()
         wait(0.5, 1.5)
         for _ in range(3):
-            logging.info("Getting score...")
+            Debugger.pause()
             try:
                 return int(page.locator("#fly_id_rc").inner_text(timeout=1000))
             except ValueError:
@@ -182,17 +127,15 @@ def get_score(page: Page, mobile: bool = False) -> int:
                 logging.info("Timeout occurred while parsing score, opening drawer...")
                 page.locator("#mHamburger").click()
                 wait(0.5, 1.5)
-        return -1
     else:
-        logging.info("PC mode.")
         for _ in range(3):
-            logging.info("Getting score...")
+            Debugger.pause()
             try:
-                return int(page.locator("#id_rc").inner_text(timeout=1000))
+                return int(page.locator(".points-container").inner_text(timeout=1000))
             except ValueError:
                 logging.info("Error occurred while parsing score, waiting...")
                 wait(0.5, 1.5)
-        return -1
+    return -1
 
 
 def type_query(page: Page, query: str):
@@ -237,9 +180,7 @@ def search_v2(page: Page, mobile: bool = False):
             wait(2, 3)
             suggestions = page.locator(".sa_sg").all()
             # Exclude the last 2 suggestions because they are not.
-            suggestion = suggestions[
-                randint(len(suggestions) - 5, len(suggestions) - 3)
-            ]
+            suggestion = suggestions[randint(0, len(suggestions) - 1)]
             suggestion.click()
             wait(2, 3)
         wait(3, 4)
@@ -262,7 +203,7 @@ def search_v2(page: Page, mobile: bool = False):
         else:
             same_score_count = 0
         prev_score = curr_score
-        Debug.pause()
+        Debugger.pause()
     logging.info("Search complete.")
 
 
@@ -272,10 +213,7 @@ def search(page: Page, mobile: bool = False):
     m_no_click_result = False
     for i in range(50):
         logging.info(f"Search attempt {i + 1}/50")
-        word_len = randint(2, 3)
-        # words = []
-        # for _ in range(word_len):
-        # words.append(choice(list(WORD_LIST)))
+        word_len = randint(2, 4)
         words = [choice(string.ascii_lowercase) for _ in range(word_len)]
         logging.info(f"Words: {words} ({word_len})")
         if mobile:
@@ -306,12 +244,13 @@ def search(page: Page, mobile: bool = False):
                     page.go_back()
                     break
                 except TimeoutError:
-                    logging.info("Timeout occurred while locating first search result.")
-                    logging.info("Trying again...")
+                    logging.info("Timeout occurred while locating first search result, trying again...")
                     click_attempt += 1
                     wait(1, 2)
                 if click_attempt == 5:
-                    logging.warning("Failed to locate first search result, skipping from later on.")
+                    logging.warning(
+                        "Failed to locate first search result, skipping from later on."
+                    )
                     m_no_click_result = True
                     break
             wait(2, 3)
@@ -322,8 +261,6 @@ def search(page: Page, mobile: bool = False):
                 wait(2, 3)
                 page.keyboard.type("".join(words), delay=50)
                 wait(1, 2)
-                # page.keyboard.press("Tab")
-                # wait(1, 2)
                 page.keyboard.press("Enter")
             else:
                 logging.debug("Simulating typing on PC...")
@@ -341,14 +278,14 @@ def search(page: Page, mobile: bool = False):
                     "Score did not change 3 times, probably we searched enough."
                 )
                 logging.info(
-                    "If the score isn't full, please report this issue on GitHub."
+                    "If the score isn't full, please report this issue on GitHub (with debug log using --debug)."  # noqa: E501
                 )
                 break
             same_score_count += 1
         else:
             same_score_count = 0
         prev_score = curr_score
-        Debug.pause()
+        Debugger.pause()
     logging.info("Search complete.")
 
 
@@ -372,24 +309,25 @@ def launch_pc(
         timezone_id="Asia/Ho_Chi_Minh",
     )
     page = context.new_page()
-    stealth_sync(page=page)
     logging.info("Visiting Bing...")
     page.goto("https://www.bing.com/")
-    Debug.screenshot(page, "bing-chromium-1")
-    Debug.pause()
-    wait(2, 3)
-    logging.info("Clicking the 'Login' button...")
-    Debug.screenshot(page, "bing-chromium-2")
-    page.locator("#id_l").click()
-    Debug.pause()
+    Debugger.screenshot(page, "bing-chromium-1")
+    Debugger.pause()
     wait(1, 2)
+    page.wait_for_load_state("domcontentloaded", timeout=30000)
+    logging.info("Clicking the 'Login' button...")
+    Debugger.screenshot(page, "bing-chromium-2")
+    page.locator("#id_l").click()
+    Debugger.pause()
+    wait(1, 2)
+    page.wait_for_load_state("domcontentloaded", timeout=30000)
     check_session(page)
     logging.info("Executing search function...")
     if use_search_v2:
         search_v2(page)
     else:
         search(page)
-    Debug.pause()
+    Debugger.pause()
     logging.info("Saving browser cookies...")
     try:
         context.storage_state(path="cookies.json")
@@ -400,22 +338,11 @@ def launch_pc(
     browser.close()
 
 
-def get_mobile_edge_version() -> str:
-    rsp = requests.get("https://edgeupdates.microsoft.com/api/products")
-    rsp.raise_for_status()
-    data = rsp.json()
-    for release in data[0]["Releases"]:
-        if release["Platform"] == "iOS":
-            return release["ProductVersion"]
-    raise ValueError("No iOS version found.")
-
-
 def start_mobile(page: Page, use_search_v2: bool = False):
-    stealth_sync(page=page)
     logging.info("Visiting Bing...")
     page.goto("https://www.bing.com/")
-    Debug.screenshot(page, "bing-webkit-1")
-    Debug.pause()
+    Debugger.screenshot(page, "bing-webkit-1")
+    Debugger.pause()
     wait(1, 2)
     if get_score(page, mobile=True) == -1:
         logging.info("Clicking the 'Login' button...")
@@ -432,7 +359,7 @@ def start_mobile(page: Page, use_search_v2: bool = False):
         search_v2(page, True)
     else:
         search(page, True)
-    Debug.pause()
+    Debugger.pause()
 
 
 def launch_mobile(
@@ -457,7 +384,8 @@ def launch_mobile(
     edge_version = get_mobile_edge_version()
     logging.info("Edge version: " + edge_version)
     user_agent = EDGE_IOS_UA.format(
-        IOS_VERSION=choice(VALID_IOS_VERSIONS).replace(".", "_"), EDGE_VERSION=edge_version
+        IOS_VERSION=choice(VALID_IOS_VERSIONS).replace(".", "_"),
+        EDGE_VERSION=edge_version,
     )  # noqa: E501
     logging.info(f"Crafted UA: {user_agent}")
     logging.info("Monkey-patching WebKit user agent...")
@@ -495,13 +423,12 @@ def install_deps():
     Install required dependencies.
     """
     logging.info("Installing Playwright dependencies...")
-    sys.argv = ["playwright", "install", "chromium", "webkit"]
-    run_module("playwright", run_name="__main__")
+    sys.argv = ["patchright", "install", "chromium", "webkit"]
+    run_module("patchright", run_name="__main__")
     logging.info("Dependencies installed.")
 
 
 def main():
-    global DEBUG, DEBUG_PAUSE
     parser = argparse.ArgumentParser(
         prog="Bingto",
         description="Automate Bing searches to earn Microsoft Rewards points.",  # noqa: E501
@@ -532,7 +459,10 @@ def main():
         "--debug", action="store_true", help="Enable debug mode.", default=False
     )
     parser.add_argument(
-        "--debug-pause", action="store_true", help="Enable debug mode & pausing.", default=False
+        "--debug-pause",
+        action="store_true",
+        help="Enable debug mode & pausing.",
+        default=False,
     )
     parser.add_argument(
         "--no-webkit",
@@ -543,11 +473,6 @@ def main():
         "--force-chromium",
         action="store_true",
         help="Force use of Chromium even if Edge is available.",
-    )
-    parser.add_argument(
-        "--no-stealth",
-        action="store_true",
-        help="Do not use playwright_stealth.",
     )
     parser.add_argument(
         "--use-search-v2",
@@ -566,16 +491,14 @@ def main():
         help="Uses PC profile instead of phone as a base (Mobile only).",
     )
     args = parser.parse_args()
-    DEBUG = args.debug
-    DEBUG_PAUSE = args.debug_pause
-    if DEBUG:
+    Debugger.enabled = args.debug
+    Debugger.enable_pause = args.debug_pause
+    if Debugger.enabled:
         logging.getLogger().setLevel(logging.DEBUG)
     logging.info(f"Bingto {__version__} - https://github.com/teppyboy/bingto")
     if args.install:
         install_deps()
         exit()
-    if args.no_stealth:
-        init_fake_playwright_stealth()
     if not Path("cookies.json").exists():
         logging.info("Cookies file not found.")
         login()

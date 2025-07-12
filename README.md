@@ -2,12 +2,17 @@
 
 Automate Bing searches to earn Microsoft Rewards points.
 
+> [!WARNING]
+> Mobile mode is not working, please append `--skip-mobile` before running. 
+
 ## Usage
 
-For first run, if you don't have Edge & WebKit then you need to execute `bingto --install` to 
+For the first run, if you don't have Edge & WebKit then you need to execute `bingto --install` to 
 complete the dependency install.
 
 Then after that, execute `bingto` and let it do the job.
+
+For advanced option please referer to `--help`. 
 
 ## Installation
 

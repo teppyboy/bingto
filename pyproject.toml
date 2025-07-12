@@ -8,10 +8,9 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.11"
-playwright = "^1.37.0"
 english-words = "^2.0.1"
-playwright-stealth = "^1.0.6"
 requests = "^2.31.0"
+patchright = "^1.52.5"
 
 [tool.poetry.scripts]
 bingto = 'bingto.app:main'
